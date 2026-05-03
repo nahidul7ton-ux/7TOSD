@@ -1,4 +1,4 @@
-id,customer_name,customer_phone,delivery_address,amount,status,courier,tracking_id,consignment_id
-1001,John Doe,01712345678,Dhaka,1200,Pending,Pathao,PT-123,PT-C-456
-1002,Jane Smith,01812345678,Chittagong,2500,Processing,CarryBee,CB-999,CB-C-111
-1003,Abir Ahmed,01912345678,Sylhet,450,On the way,Pathao,PT-444,PT-C-777
+status,courier_namer,tracking_id,consignment_id
+Pending,Pathao,PT-123,PT-C-456
+Processing,CarryBee,CB-999,CB-C-111
+On the way,Pathao,PT-444,PT-C-777
