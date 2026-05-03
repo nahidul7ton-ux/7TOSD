@@ -3,35 +3,35 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import fs from "fs";
 import multer from "multer";
+import axios from "axios";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
-import axios from "axios";
 
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT || 3000);
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "db.json");
 const LOG_PATH = path.join(DATA_DIR, "webhook_logs.json");
 const UPLOADS_DIR = path.join(process.cwd(), "uploads");
 
-// ======================
-// Ensure folders exist
-// ======================
+// ================================
+// CREATE REQUIRED DIRECTORIES
+// ================================
 [DATA_DIR, UPLOADS_DIR].forEach((dir) => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
 });
 
-// ======================
-// Initial DB
-// ======================
+// ================================
+// INITIAL DATABASE
+// ================================
 const INITIAL_DB = {
   orders: [],
   settings: {
     pathao_webhook_secret:
       process.env.PATHAO_WEBHOOK_SECRET ||
-      "40489fe0-9386-4fc9-8e92-2b2fcb9d451c",
+      "f3992ecc-59da-4cbe-a049-a13da2018d51",
 
     carrybee_webhook_secret:
       process.env.CARRYBEE_WEBHOOK_SECRET ||
@@ -39,9 +39,9 @@ const INITIAL_DB = {
   },
 };
 
-// ======================
-// DB FUNCTIONS
-// ======================
+// ================================
+// DATABASE FUNCTIONS
+// ================================
 function getDB() {
   try {
     if (!fs.existsSync(DB_PATH)) {
@@ -62,7 +62,7 @@ function getDB() {
 
     return db;
   } catch (e) {
-    console.error("DB ERROR:", e);
+    console.error("DB LOAD ERROR:", e);
 
     fs.writeFileSync(DB_PATH, JSON.stringify(INITIAL_DB, null, 2));
 
@@ -74,9 +74,9 @@ function saveDB(db: any) {
   fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
 }
 
-// ======================
-// LOGS
-// ======================
+// ================================
+// LOGGING SYSTEM
+// ================================
 function getLogs() {
   if (!fs.existsSync(LOG_PATH)) {
     fs.writeFileSync(LOG_PATH, JSON.stringify([], null, 2));
@@ -97,9 +97,14 @@ function saveLog(log: any) {
   fs.writeFileSync(LOG_PATH, JSON.stringify(logs.slice(0, 1000), null, 2));
 }
 
-// ======================
+// ================================
+// DUPLICATE EVENT PROTECTION
+// ================================
+const processedEvents = new Set<string>();
+
+// ================================
 // UPSERT ORDER
-// ======================
+// ================================
 function upsertOrder(db: any, update: any) {
   const index = db.orders.findIndex(
     (o: any) =>
@@ -123,9 +128,9 @@ function upsertOrder(db: any, update: any) {
   }
 }
 
-// ======================
-// SERVER START
-// ======================
+// ================================
+// START SERVER
+// ================================
 async function startServer() {
   const app = express();
 
@@ -135,18 +140,31 @@ async function startServer() {
     dest: UPLOADS_DIR,
   });
 
-  // ======================
-  // INFO
-  // ======================
-  app.get("/api/info", (req, res) => {
+  // ================================
+  // API HEALTH
+  // ================================
+  app.get("/api/health", (req, res) => {
     res.json({
-      appUrl: process.env.APP_URL || `http://localhost:${PORT}`,
+      success: true,
+      status: "running",
+      time: new Date().toISOString(),
     });
   });
 
-  // ======================
+  // ================================
+  // APP INFO
+  // ================================
+  app.get("/api/info", (req, res) => {
+    res.json({
+      appUrl:
+        process.env.APP_URL ||
+        `http://localhost:${PORT}`,
+    });
+  });
+
+  // ================================
   // SETTINGS
-  // ======================
+  // ================================
   app.get("/api/settings", (req, res) => {
     const db = getDB();
     res.json(db.settings);
@@ -164,28 +182,28 @@ async function startServer() {
 
     res.json({
       success: true,
-      message: "Settings updated",
+      message: "Settings saved",
     });
   });
 
-  // ======================
+  // ================================
   // ORDERS
-  // ======================
+  // ================================
   app.get("/api/orders", (req, res) => {
     const db = getDB();
     res.json(db.orders);
   });
 
-  // ======================
+  // ================================
   // LOGS
-  // ======================
+  // ================================
   app.get("/api/logs", (req, res) => {
     res.json(getLogs());
   });
 
-  // ======================
+  // ================================
   // CLEAR DATABASE
-  // ======================
+  // ================================
   app.post("/api/clear-all", (req, res) => {
     const db = getDB();
 
@@ -195,30 +213,37 @@ async function startServer() {
 
     res.json({
       success: true,
-      message: "Database cleared",
+      message: "All data cleared",
     });
   });
 
-  // ======================
-  // CSV SAMPLE DOWNLOAD
-  // ======================
+  // ================================
+  // SAMPLE CSV DOWNLOAD
+  // ================================
   app.get("/api/sample-csv", (req, res) => {
-    const csvPath = path.join(process.cwd(), "sample.csv");
+    const csvPath = path.join(
+      process.cwd(),
+      "sample.csv"
+    );
 
     if (!fs.existsSync(csvPath)) {
       return res.status(404).send("Sample CSV not found");
     }
 
-    res.download(csvPath, "sample_fleettrack.csv", (err) => {
-      if (err) {
-        console.error(err);
+    res.download(
+      csvPath,
+      "sample_fleettrack.csv",
+      (err) => {
+        if (err) {
+          console.error(err);
+        }
       }
-    });
+    );
   });
 
-  // ======================
+  // ================================
   // CSV EXPORT
-  // ======================
+  // ================================
   app.get("/api/export", (req, res) => {
     const db = getDB();
 
@@ -236,120 +261,142 @@ async function startServer() {
     res.send(csv);
   });
 
-  // ======================
+  // ================================
   // CSV IMPORT
-  // ======================
-  app.post("/api/upload", upload.single("file"), (req, res) => {
-    try {
-      if (!(req as any).file) {
-        return res.status(400).json({
-          error: "No file uploaded",
+  // ================================
+  app.post(
+    "/api/upload",
+    upload.single("file"),
+    (req, res) => {
+      try {
+        if (!(req as any).file) {
+          return res.status(400).json({
+            error: "No file uploaded",
+          });
+        }
+
+        const content = fs.readFileSync(
+          (req as any).file.path,
+          "utf-8"
+        );
+
+        const records = parse(content, {
+          columns: true,
+          skip_empty_lines: true,
+          trim: true,
+        });
+
+        const db = getDB();
+
+        records.forEach((r: any) => {
+          upsertOrder(db, {
+            tracking_id: r.tracking_id || "",
+            consignment_id:
+              r.consignment_id || "",
+            courier_name:
+              r.courier_name || "",
+            status: "Pending",
+            status_timestamp:
+              new Date().toISOString(),
+          });
+        });
+
+        saveDB(db);
+
+        fs.unlinkSync((req as any).file.path);
+
+        res.json({
+          success: true,
+          count: records.length,
+          message: `${records.length} orders imported`,
+        });
+      } catch (e: any) {
+        res.status(500).json({
+          error: e.message,
         });
       }
-
-      const content = fs.readFileSync((req as any).file.path, "utf-8");
-
-      const records = parse(content, {
-        columns: true,
-        skip_empty_lines: true,
-        trim: true,
-      });
-
-      const db = getDB();
-
-      records.forEach((r: any) => {
-        upsertOrder(db, {
-          tracking_id: r.tracking_id || "",
-          consignment_id: r.consignment_id || "",
-          courier_name: r.courier_name || "",
-          status: "Pending",
-          status_timestamp: new Date().toISOString(),
-        });
-      });
-
-      saveDB(db);
-
-      fs.unlinkSync((req as any).file.path);
-
-      res.json({
-        success: true,
-        count: records.length,
-        message: `${records.length} orders imported`,
-      });
-    } catch (e: any) {
-      res.status(500).json({
-        error: e.message,
-      });
     }
-  });
+  );
 
-  // ======================
+  // ================================
   // TEST WEBHOOK
-  // ======================
-  app.post("/api/test-webhook", async (req, res) => {
-    try {
-      const { courier, consignment_id } = req.body;
+  // ================================
+  app.post(
+    "/api/test-webhook",
+    async (req, res) => {
+      try {
+        const { courier, consignment_id } =
+          req.body;
 
-      const db = getDB();
+        const db = getDB();
 
-      if (courier === "Pathao") {
-        await axios.post(
-          `http://localhost:${PORT}/webhooks/pathao`,
-          {
-            event: "order.delivered",
-            consignment_id,
-            merchant_order_id: consignment_id,
-            timestamp: new Date().toISOString(),
-          },
-          {
-            headers: {
-              "X-Pathao-Merchant-Webhook-Integration-Secret":
-                db.settings.pathao_webhook_secret,
+        if (courier === "Pathao") {
+          await axios.post(
+            `http://localhost:${PORT}/webhooks/pathao`,
+            {
+              event: "order.delivered",
+              consignment_id,
+              merchant_order_id:
+                consignment_id,
+              timestamp:
+                new Date().toISOString(),
             },
-          }
-        );
-      } else {
-        await axios.post(
-          `http://localhost:${PORT}/webhooks/carrybee`,
-          {
-            consignment_id,
-            status: "Delivered",
-          },
-          {
-            headers: {
-              "X-CB-Webhook-Integration-Header":
-                db.settings.carrybee_webhook_secret,
+            {
+              headers: {
+                "X-Pathao-Merchant-Webhook-Integration-Secret":
+                  db.settings
+                    .pathao_webhook_secret,
+              },
+            }
+          );
+        } else {
+          await axios.post(
+            `http://localhost:${PORT}/webhooks/carrybee`,
+            {
+              consignment_id,
+              status: "Delivered",
             },
-          }
-        );
+            {
+              headers: {
+                "X-CB-Webhook-Integration-Header":
+                  db.settings
+                    .carrybee_webhook_secret,
+              },
+            }
+          );
+        }
+
+        res.json({
+          success: true,
+          message: "Webhook test successful",
+        });
+      } catch (e: any) {
+        res.status(500).json({
+          error: e.message,
+        });
       }
-
-      res.json({
-        success: true,
-        message: "Webhook test successful",
-      });
-    } catch (e: any) {
-      res.status(500).json({
-        error: e.message,
-      });
     }
-  });
+  );
 
-  // ======================
+  // ================================
   // PATHAO WEBHOOK
-  // ======================
+  // ================================
   app.post("/webhooks/pathao", (req, res) => {
     const db = getDB();
 
-    const secret = db.settings.pathao_webhook_secret;
+    const secret =
+      db.settings.pathao_webhook_secret;
 
+    // REQUIRED RESPONSE HEADER
     res.setHeader(
       "X-Pathao-Merchant-Webhook-Integration-Secret",
       secret
     );
 
+    // FAST RESPONSE
     res.status(202).end("Accepted");
 
+    // BACKGROUND PROCESSING
     setImmediate(() => {
       try {
         const payload = req.body;
@@ -359,7 +406,11 @@ async function startServer() {
           payload,
         });
 
-        if (payload.event === "webhook_integration") {
+        // VALIDATION EVENT
+        if (
+          payload.event ===
+          "webhook_integration"
+        ) {
           saveLog({
             courier: "Pathao",
             message: "Webhook verified",
@@ -368,20 +419,39 @@ async function startServer() {
           return;
         }
 
-        const eventMap: Record<string, string> = {
+        const eventKey =
+          payload.consignment_id +
+          "_" +
+          payload.event;
+
+        if (processedEvents.has(eventKey)) {
+          return;
+        }
+
+        processedEvents.add(eventKey);
+
+        const eventMap: Record<
+          string,
+          string
+        > = {
           "order.delivered": "Delivered",
-          "order.partial_delivered": "Partial Delivered",
+          "order.partial_delivered":
+            "Partial Delivered",
           "order.returned": "Returned",
           "order.cancelled": "Failed",
           "order.in_transit": "On the way",
           "order.picked_up": "Processing",
-          "order.assigned_for_delivery": "On the way",
-          "order.received_at_hub": "Processing",
+          "order.assigned_for_delivery":
+            "On the way",
+          "order.received_at_hub":
+            "Processing",
           "order.on_hold": "On Hold",
         };
 
         const status =
-          eventMap[payload.event] || payload.order_status || "Updated";
+          eventMap[payload.event] ||
+          payload.order_status ||
+          "Updated";
 
         const db2 = getDB();
 
@@ -390,7 +460,8 @@ async function startServer() {
             payload.merchant_order_id ||
             payload.consignment_id,
 
-          consignment_id: payload.consignment_id,
+          consignment_id:
+            payload.consignment_id,
 
           courier_name: "Pathao",
 
@@ -420,13 +491,14 @@ async function startServer() {
     });
   });
 
-  // ======================
+  // ================================
   // CARRYBEE WEBHOOK
-  // ======================
+  // ================================
   app.post("/webhooks/carrybee", (req, res) => {
     const db = getDB();
 
-    const secret = db.settings.carrybee_webhook_secret;
+    const secret =
+      db.settings.carrybee_webhook_secret;
 
     res.setHeader(
       "X-CB-Webhook-Integration-Header",
@@ -444,7 +516,21 @@ async function startServer() {
           payload,
         });
 
-        const statusMap: Record<string, string> = {
+        const eventKey =
+          payload.consignment_id +
+          "_" +
+          payload.status;
+
+        if (processedEvents.has(eventKey)) {
+          return;
+        }
+
+        processedEvents.add(eventKey);
+
+        const statusMap: Record<
+          string,
+          string
+        > = {
           Delivered: "Delivered",
           Returned: "Returned",
           Processing: "Processing",
@@ -459,15 +545,18 @@ async function startServer() {
         const db2 = getDB();
 
         upsertOrder(db2, {
-          tracking_id: payload.consignment_id,
+          tracking_id:
+            payload.consignment_id,
 
-          consignment_id: payload.consignment_id,
+          consignment_id:
+            payload.consignment_id,
 
           courier_name: "CarryBee",
 
           status,
 
-          status_timestamp: new Date().toISOString(),
+          status_timestamp:
+            new Date().toISOString(),
         });
 
         saveDB(db2);
@@ -485,9 +574,9 @@ async function startServer() {
     });
   });
 
-  // ======================
-  // FRONTEND
-  // ======================
+  // ================================
+  // FRONTEND + VITE
+  // ================================
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: {
@@ -498,20 +587,36 @@ async function startServer() {
 
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");  app.use(express.static(distPath));  app.get("*", (req, res) => {   const indexFile = path.join(distPath, "index.html");    if (fs.existsSync(indexFile)) {     res.sendFile(indexFile);   } else {     res.status(500).send("Frontend build not found");   } });
+    const distPath = path.join(
+      process.cwd(),
+      "dist"
+    );
 
     app.use(express.static(distPath));
 
     app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      const indexFile = path.join(
+        distPath,
+        "index.html"
+      );
+
+      if (fs.existsSync(indexFile)) {
+        res.sendFile(indexFile);
+      } else {
+        res
+          .status(500)
+          .send("Frontend build not found");
+      }
     });
   }
 
-  // ======================
+  // ================================
   // START SERVER
-  // ======================
-  app.listen(Number(PORT), "0.0.0.0", () => {
-    console.log(`🚀 Server running on port ${PORT}`);
+  // ================================
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(
+      `🚀 Server running on http://localhost:${PORT}`
+    );
   });
 }
 
