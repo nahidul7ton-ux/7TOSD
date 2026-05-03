@@ -498,7 +498,7 @@ async function startServer() {
 
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    const distPath = path.join(process.cwd(), "dist");  app.use(express.static(distPath));  app.get("*", (req, res) => {   const indexFile = path.join(distPath, "index.html");    if (fs.existsSync(indexFile)) {     res.sendFile(indexFile);   } else {     res.status(500).send("Frontend build not found");   } });
 
     app.use(express.static(distPath));
 
