@@ -1,0 +1,6 @@
+{
+  "name": "FleetTrack Pro",
+  "description": "Bulk courier tracking management with Pathao and CarryBee integrations, CSV processing, and automated webhook handling.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["CSV Processing", "Webhook Integration", "Bulk Tracking"]
+}
